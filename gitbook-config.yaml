@@ -1,0 +1,13 @@
+root: ./
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md
+
+redirects:
+  requirements: ./requirements/README.md
+  architecture: ./architecture/README.md
+  data-structure: ./data-structure/README.md
+  user-guide: ./user-guide/README.md
+  deployment: ./deployment/README.md
+  development: ./development/README.md
