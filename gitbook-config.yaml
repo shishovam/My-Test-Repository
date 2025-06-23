@@ -1,13 +1,13 @@
 root: ./
 
 structure:
-  readme: README.md
-  summary: SUMMARY.md
+  readme: readme-gitbook.md
+  summary: summary-gitbook.md
 
 redirects:
-  requirements: ./requirements/README.md
-  architecture: ./architecture/README.md
-  data-structure: ./data-structure/README.md
-  user-guide: ./user-guide/README.md
-  deployment: ./deployment/README.md
-  development: ./development/README.md
+  requirements: ./requirements/requirements-gitbook.md
+  architecture: ./architecture/architecture-gitbook.md
+  data-structure: ./data-structure/data-structure-gitbook.md
+  user-guide: ./user-guide/user-guide-gitbook.md
+  deployment: ./deployment/deployment-gitbook.md
+  development: ./development/development-gitbook.md
