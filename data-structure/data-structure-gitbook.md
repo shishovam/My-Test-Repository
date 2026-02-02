@@ -13,9 +13,9 @@
 
 ```json
 {
-  "id": "MCI",
-  "name": "Manchester City",
-  "shortName": "Man City"
+  "id": "ARS",
+  "name": "Arsenal",
+  "shortName": "Arsenal"
 }
 ```
 
@@ -24,8 +24,8 @@
 ```json
 {
   "id": "match_001",
-  "date": "2024-08-16",
-  "homeTeamId": "MCI",
+  "date": "2026-08-16",
+  "homeTeamId": "ARS",
   "awayTeamId": "CHE",
   "homeScore": 2,
   "awayScore": 1,
@@ -38,7 +38,7 @@
 
 ```json
 {
-  "teamId": "MCI",
+  "teamId": "ARS",
   "played": 10,
   "won": 7,
   "drawn": 2,
@@ -104,7 +104,7 @@ erDiagram
 
 ## 4. Структура хранилища
 
-### 4.1 Список команд АПЛ 2024/2025
+### 4.1 Список команд АПЛ 2026/2027
 
 ```json
 {
@@ -140,8 +140,8 @@ erDiagram
   "epl_matches": [
     {
       "id": "match_001",
-      "date": "2024-08-16",
-      "homeTeamId": "MCI",
+      "date": "2026-08-16",
+      "homeTeamId": "ARS",
       "awayTeamId": "CHE",
       "homeScore": 2,
       "awayScore": 1,
@@ -157,8 +157,8 @@ erDiagram
 ```json
 {
   "epl_settings": {
-    "season": "2024/2025",
-    "lastUpdated": "2024-08-16T15:30:00Z",
+    "season": "2026/2027",
+    "lastUpdated": "2026-08-16T15:30:00Z",
     "dataVersion": "1.0"
   }
 }
