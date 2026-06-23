@@ -105,6 +105,8 @@ erDiagram
 ## 4. Структура хранилища
 
 ### 4.1 Список команд АПЛ 2026/2027
+
+```json
 {
   "epl_teams": [
     {"id": "ARS", "name": "Arsenal", "shortName": "Arsenal"},
@@ -129,6 +131,7 @@ erDiagram
     {"id": "TOT", "name": "Tottenham Hotspur", "shortName": "Tottenham"}
   ]
 }
+```
 
 ### 4.2 Коллекция матчей
 
