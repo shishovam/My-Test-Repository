@@ -105,8 +105,6 @@ erDiagram
 ## 4. Структура хранилища
 
 ### 4.1 Список команд АПЛ 2026/2027
-
-```json
 {
   "epl_teams": [
     {"id": "ARS", "name": "Arsenal", "shortName": "Arsenal"},
@@ -115,23 +113,22 @@ erDiagram
     {"id": "BRE", "name": "Brentford", "shortName": "Brentford"},
     {"id": "BHA", "name": "Brighton & Hove Albion", "shortName": "Brighton"},
     {"id": "CHE", "name": "Chelsea", "shortName": "Chelsea"},
+    {"id": "COV", "name": "Coventry City", "shortName": "Coventry"},
     {"id": "CRY", "name": "Crystal Palace", "shortName": "Crystal Palace"},
     {"id": "EVE", "name": "Everton", "shortName": "Everton"},
     {"id": "FUL", "name": "Fulham", "shortName": "Fulham"},
+    {"id": "HUL", "name": "Hull City", "shortName": "Hull"},
     {"id": "IPS", "name": "Ipswich Town", "shortName": "Ipswich"},
-    {"id": "LEI", "name": "Leicester City", "shortName": "Leicester"},
+    {"id": "LEE", "name": "Leeds United", "shortName": "Leeds"},
     {"id": "LIV", "name": "Liverpool", "shortName": "Liverpool"},
     {"id": "MCI", "name": "Manchester City", "shortName": "Man City"},
     {"id": "MUN", "name": "Manchester United", "shortName": "Man United"},
     {"id": "NEW", "name": "Newcastle United", "shortName": "Newcastle"},
     {"id": "NFO", "name": "Nottingham Forest", "shortName": "Nott'm Forest"},
-    {"id": "SOU", "name": "Southampton", "shortName": "Southampton"},
-    {"id": "TOT", "name": "Tottenham Hotspur", "shortName": "Tottenham"},
-    {"id": "WHU", "name": "West Ham United", "shortName": "West Ham"},
-    {"id": "WOL", "name": "Wolverhampton", "shortName": "Wolves"}
+    {"id": "SUN", "name": "Sunderland", "shortName": "Sunderland"},
+    {"id": "TOT", "name": "Tottenham Hotspur", "shortName": "Tottenham"}
   ]
 }
-```
 
 ### 4.2 Коллекция матчей
 
@@ -158,7 +155,7 @@ erDiagram
 {
   "epl_settings": {
     "season": "2026/2027",
-    "lastUpdated": "2026-08-16T15:30:00Z",
+    "lastUpdated": "2026-08-22T15:30:00Z",
     "dataVersion": "1.0"
   }
 }
