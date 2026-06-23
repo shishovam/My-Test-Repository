@@ -1,157 +1,185 @@
-# Инструкция по развертыванию
+# Инструкция по развёртыванию
 
-## 1. Подготовка проекта
+Развёртывание выполняется на платформе Cloudflare: backend — Worker, БД — D1, frontend — Pages. Все шаги выполняются через **Wrangler CLI** (можно запускать через агент в ZCode / Claude Code).
 
-### 1.1 Структура файлов
-Убедитесь, что у вас есть следующие файлы:
-```
-epl-results-tracker/
-├── index.html
-├── css/
-│   └── styles.css
-├── js/
-│   ├── app.js
-│   ├── data.js
-│   ├── ui.js
-│   ├── calculator.js
-│   └── validator.js
-└── data/
-    └── teams.json
-```
+## 1. Предварительные требования
 
-### 1.2 Проверка работоспособности
-1. Откройте `index.html` в браузере локально
-2. Проверьте основные функции:
-   - Добавление матча
-   - Отображение таблицы
-   - Сохранение данных
-
-## 2. Настройка парольной защиты с StatiCrypt
-
-### 2.1 Установка StatiCrypt
+- Node.js 18+
+- Git
+- Аккаунт Cloudflare (бесплатный)
+- Wrangler CLI:
 ```bash
-npm install -g staticrypt
+npm install -g wrangler
 ```
 
-### 2.2 Шифрование страницы
+## 2. Авторизация в Cloudflare
+
 ```bash
-staticrypt index.html -p ВАШ_ПАРОЛЬ -o index.html
+wrangler login
 ```
+Откроется браузер — подтвердите доступ. Это единственный шаг, который нельзя автоматизировать агентом: вход подтверждает человек.
 
-Опции:
-- `-p` - пароль для защиты
-- `-o` - выходной файл (перезаписываем оригинал)
-- `--remember` - опция для запоминания пароля в браузере
-
-Пример с дополнительными опциями:
+Проверка:
 ```bash
-staticrypt index.html -p mySecurePassword123 --remember 30 --title "EPL Results Tracker" -o index.html
+wrangler whoami
 ```
 
-### 2.3 Создание резервной копии
-Перед шифрованием создайте копию оригинального файла:
+## 3. Создание базы данных D1
+
 ```bash
-cp index.html index.original.html
+cd backend
+wrangler d1 create epl-tracker
 ```
 
-## 3. Развертывание на Netlify
+Команда выведет блок с `database_id`. Скопируйте его в `wrangler.toml`:
 
-### 3.1 Подготовка к развертыванию
-1. Создайте аккаунт на [Netlify](https://www.netlify.com/)
-2. Установите Git (если еще не установлен)
-3. Создайте репозиторий на GitHub
+```toml
+name = "epl-tracker-api"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
 
-### 3.2 Загрузка на GitHub
+[[d1_databases]]
+binding = "DB"
+database_name = "epl-tracker"
+database_id = "ВСТАВЬТЕ_СЮДА_ID"
+```
+
+## 4. Применение схемы и начальных данных
+
 ```bash
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/ВАШ_ЛОГИН/epl-results-tracker.git
-git push -u origin main
+# Схема (таблицы + индексы) — в удалённую БД
+wrangler d1 execute epl-tracker --remote --file=./schema.sql
+
+# Команды АПЛ
+wrangler d1 execute epl-tracker --remote --file=./seed.sql
 ```
 
-### 3.3 Развертывание через Netlify
-
-#### Способ 1: Через интерфейс Netlify
-1. Войдите в панель Netlify
-2. Нажмите "Add new site" → "Import an existing project"
-3. Выберите GitHub и авторизуйтесь
-4. Выберите репозиторий `epl-results-tracker`
-5. Настройки сборки оставьте пустыми (статический сайт)
-6. Нажмите "Deploy site"
-
-#### Способ 2: Drag & Drop
-1. Подготовьте папку с зашифрованными файлами
-2. Откройте [app.netlify.com/drop](https://app.netlify.com/drop)
-3. Перетащите папку проекта в окно браузера
-4. Дождитесь загрузки
-
-### 3.4 Настройка домена
-1. В настройках сайта на Netlify найдите "Domain settings"
-2. Измените автоматически сгенерированное имя на желаемое
-3. Ваш сайт будет доступен по адресу: `https://ваше-имя.netlify.app`
-
-## 4. Альтернативное развертывание на GitHub Pages
-
-### 4.1 Настройка репозитория
-1. Создайте публичный репозиторий на GitHub
-2. Загрузите файлы проекта
-
-### 4.2 Активация GitHub Pages
-1. Перейдите в Settings репозитория
-2. Найдите раздел "Pages"
-3. Source: выберите "Deploy from a branch"
-4. Branch: выберите "main" и папку "/ (root)"
-5. Сохраните настройки
-
-### 4.3 Доступ к сайту
-Сайт будет доступен по адресу:
-`https://ВАШ_ЛОГИН.github.io/epl-results-tracker/`
-
-## 5. Обновление приложения
-
-### 5.1 Внесение изменений
-1. Внесите изменения в оригинальные файлы
-2. Повторно зашифруйте `index.html` с StatiCrypt
-3. Закоммитьте изменения:
+Учётная запись администратора создаётся отдельным скриптом (хеш пароля считается через Web Crypto API). Пример проверки данных:
 ```bash
-git add .
-git commit -m "Описание изменений"
-git push
+wrangler d1 execute epl-tracker --remote --command="SELECT COUNT(*) FROM teams;"
+```
+Ожидаемо: 20 команд.
+
+## 5. Настройка секретов
+
+JWT-секрет хранится в защищённом хранилище Cloudflare, не в коде:
+```bash
+wrangler secret put JWT_SECRET
+```
+Введите значение секрета в терминал (его вводит человек, агент не должен знать значение).
+
+Для локальной разработки создайте файл `backend/.dev.vars` (он в `.gitignore`):
+```
+JWT_SECRET=локальный-секрет-для-разработки
 ```
 
-### 5.2 Автоматическое обновление
-- Netlify автоматически обновит сайт после push в GitHub
-- GitHub Pages обновится в течение нескольких минут
+## 6. Деплой backend (Worker)
 
-## 6. Проверка развертывания
+```bash
+cd backend
+npm install
+wrangler deploy
+```
 
-### 6.1 Тестирование
-1. Откройте URL вашего сайта
-2. Введите пароль
-3. Проверьте все функции:
-   - Добавление результатов
-   - Сохранение данных
-   - Экспорт/импорт
+После деплоя Worker будет доступен по адресу вида:
+```
+https://epl-tracker-api.<ваш-аккаунт>.workers.dev
+```
+Проверка:
+```bash
+curl https://epl-tracker-api.<ваш-аккаунт>.workers.dev/api/health
+```
 
-### 6.2 Troubleshooting
+## 7. Деплой frontend (Pages)
 
-**Сайт не открывается:**
-- Проверьте статус развертывания в панели Netlify
-- Убедитесь, что все файлы загружены
+### Способ 1: через Wrangler
+```bash
+cd frontend
+wrangler pages deploy . --project-name=epl-tracker
+```
 
-**Пароль не работает:**
-- Проверьте, правильно ли зашифрован файл
-- Попробуйте очистить кэш браузера
+### Способ 2: через GitHub-интеграцию (авто-деплой)
+1. Cloudflare Dashboard → Workers & Pages → Create → Pages → Connect to Git
+2. Выберите репозиторий
+3. Настройки сборки:
+   - Build command: оставить пустым (статический сайт)
+   - Build output directory: `frontend`
+4. Deploy
 
-**Стили не применяются:**
-- Проверьте пути к CSS файлам
-- Убедитесь, что все файлы загружены
+Frontend будет доступен по адресу:
+```
+https://epl-tracker.pages.dev
+```
 
-## 7. Рекомендации по безопасности
+### Важно: указать адрес API
+В `frontend/config/config.js` пропишите URL вашего Worker:
+```js
+const config = {
+  API_URL: 'https://epl-tracker-api.<ваш-аккаунт>.workers.dev/api'
+};
+```
 
-- Используйте сложный пароль (минимум 12 символов)
-- Не храните пароль в репозитории
-- Регулярно меняйте пароль
-- Делайте резервные копии данных
+### Важно: CORS
+В Worker (`hono/cors`) разрешите домен frontend:
+```js
+app.use('/api/*', cors({ origin: 'https://epl-tracker.pages.dev' }));
+```
+
+## 8. Публичные адреса и домен
+
+После деплоя проект уже публично доступен:
+- Frontend: `https://epl-tracker.pages.dev`
+- Backend: `https://epl-tracker-api.<ваш-аккаунт>.workers.dev`
+
+Оба адреса бесплатные, с HTTPS, доступны из любой точки мира. **Покупка собственного домена не требуется.**
+
+Опционально (для портфолио) можно привязать собственный домен:
+1. Купить домен (Cloudflare Registrar — по себестоимости) или использовать имеющийся
+2. Pages → Custom domains → добавить домен
+3. DNS настроится автоматически, если домен в Cloudflare
+
+## 9. Обновление приложения
+
+```bash
+# Изменили код backend
+cd backend && wrangler deploy
+
+# Изменили frontend
+cd frontend && wrangler pages deploy . --project-name=epl-tracker
+# (или просто git push, если настроена GitHub-интеграция)
+```
+
+## 10. Проверка развёртывания (smoke-тест)
+
+1. Открыть `https://epl-tracker.pages.dev`
+2. Войти с учётными данными администратора
+3. Выбрать тур, добавить тестовый матч
+4. Убедиться, что таблица пересчиталась
+5. Удалить тестовый матч
+6. Выйти из системы
+
+## 11. Лимиты бесплатного тарифа Cloudflare
+
+| Сервис | Бесплатный лимит |
+|--------|------------------|
+| Workers | 100 000 запросов/день |
+| D1 | 5 ГБ хранилища (до 500 МБ на базу на free), 5 млн строк чтения/день, 100 тыс. записи/день |
+| Pages | безлимитный трафик, 500 сборок/месяц |
+
+Для данного проекта (десятки команд, до 380 матчей в сезон) этих лимитов хватает с огромным запасом. Важное преимущество: на бесплатном тарифе Cloudflare проекты **не приостанавливаются и не удаляются** за неактивность.
+
+## 12. Troubleshooting
+
+**Worker не отвечает / ошибка D1 binding:**
+- Проверьте `database_id` в `wrangler.toml`
+- Убедитесь, что схема применена: `wrangler d1 execute ... --command="SELECT name FROM sqlite_master WHERE type='table';"`
+
+**CORS-ошибка в браузере:**
+- Проверьте, что `origin` в `hono/cors` совпадает с адресом frontend
+
+**401 при запросах:**
+- Проверьте, что `JWT_SECRET` задан через `wrangler secret put`
+- Убедитесь, что клиент отправляет заголовок `Authorization: Bearer <token>`
+
+**Не сохраняются изменения локально:**
+- При `wrangler dev` без `--remote` используется локальная D1; данные удалённой и локальной БД различаются
