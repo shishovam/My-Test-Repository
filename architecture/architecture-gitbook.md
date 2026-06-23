@@ -2,192 +2,185 @@
 
 ## 1. Общий обзор
 
-EPL Results Tracker - это клиент-серверное веб-приложение с разделением frontend и backend частей, использующее облачную PostgreSQL базу данных для хранения данных.
+EPL Results Tracker — это serverless клиент-серверное веб-приложение, полностью размещённое на платформе Cloudflare. Frontend — статический сайт на Cloudflare Pages, backend — Worker на фреймворке Hono, данные — в облачной SQLite-базе Cloudflare D1.
 
 ### 1.1 C4 Context Diagram
 
 ```mermaid
 graph TB
     User["👤 Пользователь<br/><i>Администратор лиги</i>"]
-    
-    System["⚽ EPL Results Tracker<br/><i>Система учета результатов АПЛ</i>"]
-    
-    Email["📧 Email Service<br/><i>Сервис отправки email<br/>для восстановления пароля</i>"]
-    
-    User -->|"Вводит результаты матчей<br/>Просматривает турнирную таблицу<br/>Управляет турами"| System
-    System -->|"Отправляет письма<br/>для восстановления пароля"| Email
-    
+
+    System["⚽ EPL Results Tracker<br/><i>Учёт результатов АПЛ</i>"]
+
+    User -->|"Вводит результаты матчей<br/>Просматривает таблицу<br/>Управляет турами"| System
+
     style User fill:#08427b,color:#fff
     style System fill:#1168bd,color:#fff
-    style Email fill:#999,color:#fff
 ```
+
+Внешних сервисов нет: восстановление пароля по email исключено, всё работает в пределах Cloudflare.
 
 ### 1.2 C4 Container Diagram
 
 ```mermaid
 graph TB
     User["👤 Пользователь"]
-    
-    subgraph "EPL Results Tracker"
-        Frontend["🌐 Frontend<br/><i>JavaScript, Bootstrap 5<br/>Netlify</i>"]
-        Backend["⚙️ Backend API<br/><i>Node.js, Express<br/>Railway/Render</i>"]
-        Database[("🗄️ PostgreSQL<br/><i>Supabase/Neon</i>")]
+
+    subgraph "Cloudflare"
+        Frontend["🌐 Frontend<br/><i>JavaScript, Bootstrap 5<br/>Cloudflare Pages</i>"]
+        Backend["⚙️ Backend API<br/><i>Hono на Cloudflare Workers</i>"]
+        Database[("🗄️ Cloudflare D1<br/><i>SQLite</i>")]
     end
-    
-    Email["📧 Email Service<br/><i>SendGrid/Mailgun</i>"]
-    
+
     User -->|"HTTPS"| Frontend
-    Frontend -->|"REST API<br/>JSON"| Backend
-    Backend -->|"SQL"| Database
-    Backend -->|"SMTP"| Email
-    
+    Frontend -->|"REST API / JSON<br/>+ JWT в заголовке"| Backend
+    Backend -->|"D1 binding<br/>prepared statements"| Database
+
     style User fill:#08427b,color:#fff
-    style Frontend fill:#438DD5,color:#fff
-    style Backend fill:#1168bd,color:#fff
-    style Database fill:#336791,color:#fff
-    style Email fill:#999,color:#fff
+    style Frontend fill:#F38020,color:#fff
+    style Backend fill:#F38020,color:#fff
+    style Database fill:#F38020,color:#fff
 ```
 
 ## 2. Компоненты системы
 
-### 2.1 Frontend (Клиентская часть)
+### 2.1 Frontend (Cloudflare Pages)
+
+Статический сайт: HTML + CSS + JavaScript, без сборщика.
 
 #### Основные модули:
-- **Auth Module:** Авторизация, работа с JWT токенами
-- **Rounds Manager:** Управление 38 турами и формами матчей
-- **Table Calculator:** Расчет и отображение турнирной таблицы
-- **API Client:** Взаимодействие с backend через REST API
-- **State Manager:** Управление состоянием приложения
+- **Auth (`auth.js`):** вход, сохранение и подстановка JWT, выход
+- **API Client (`api.js`):** обёртка над Fetch, добавляет `Authorization: Bearer <token>`, обрабатывает 401
+- **Rounds (`rounds.js`):** селектор туров 1–38, список матчей выбранного тура, формы добавления/редактирования
+- **Table (`table.js`):** отрисовка турнирной таблицы, автообновление после изменений
 
 #### Технологии:
 - Vanilla JavaScript ES6+
-- Bootstrap 5 для UI
-- Fetch API для HTTP запросов
-- LocalStorage для кеширования
+- Bootstrap 5
+- Fetch API
 
-### 2.2 Backend (Серверная часть)
+### 2.2 Backend (Cloudflare Worker + Hono)
 
-#### Архитектура слоев:
+Worker выполняется на edge. Hono предоставляет роутинг и middleware — синтаксически близок к Express, но работает в среде Workers (без Node.js runtime).
+
+#### Слои:
 ```
 ┌─────────────────────────────────┐
-│         Routes Layer            │  ← API endpoints
+│         Routes (Hono)           │  ← API endpoints
 ├─────────────────────────────────┤
-│      Middleware Layer           │  ← Auth, validation, logging
+│  Middleware (CORS, JWT, валид.) │  ← hono/cors, hono/jwt
 ├─────────────────────────────────┤
-│     Controllers Layer           │  ← Business logic
+│        Обработчики               │  ← бизнес-логика
 ├─────────────────────────────────┤
-│       Services Layer            │  ← Data processing
+│      Сервис таблицы              │  ← расчёт статистики
 ├─────────────────────────────────┤
-│        Models Layer             │  ← Database models
+│       D1 binding                │  ← prepared statements
 └─────────────────────────────────┘
 ```
 
-#### Основные компоненты:
-- **Authentication Service:** JWT генерация и валидация
-- **Match Service:** CRUD операции для матчей
-- **Table Service:** Расчет статистики команд
-- **Email Service:** Отправка писем для восстановления пароля
+Для простоты весь Worker размещён в одном файле `src/index.js`; при росте можно вынести роуты и сервисы в отдельные модули.
 
-### 2.3 База данных
+#### Ключевые компоненты:
+- **Auth:** проверка логина/пароля (PBKDF2 через Web Crypto API), выдача JWT через `hono/jwt`
+- **JWT middleware:** защита всех маршрутов, кроме `/api/auth/login` и `/api/health`
+- **Match handlers:** CRUD-операции для матчей
+- **Table service:** расчёт статистики и сортировка команд
 
-PostgreSQL с следующими основными таблицами:
-- `users` - данные пользователя
-- `teams` - список команд АПЛ
-- `matches` - результаты матчей
-- `password_reset_tokens` - токены восстановления пароля
+### 2.3 База данных (Cloudflare D1)
+
+D1 — это управляемый SQLite. Worker обращается к базе через binding `DB`, объявленный в `wrangler.toml`.
+
+Основные таблицы:
+- `users` — учётная запись администратора (хеш и соль пароля)
+- `teams` — 20 команд АПЛ
+- `matches` — результаты матчей
+
+Подробная схема — в документе «Структура данных».
 
 ## 3. Поток данных
 
 ### 3.1 Авторизация
 ```
-Пользователь → Login Form → API /auth/login → JWT Token → LocalStorage
-                                ↓
-                         Validate Credentials
-                                ↓
-                          PostgreSQL Check
+Пользователь → login.html → POST /api/auth/login → проверка хеша (PBKDF2)
+                                   ↓
+                            JWT (hono/jwt) → localStorage на клиенте
 ```
 
 ### 3.2 Управление матчами
 ```
-Add/Edit Match → Validate Input → API Request → Update Database
-                                       ↓
-                              Calculate Table Stats
-                                       ↓
-                              Return Updated Data → Update UI
-```
-
-### 3.3 Восстановление пароля
-```
-Request Reset → Generate Token → Save to DB → Send Email
-                                      ↓
-User Clicks Link → Validate Token → Update Password
+Добавить/изменить матч → валидация на клиенте → запрос с JWT
+        → JWT middleware → валидация на сервере → запись в D1
+        → клиент запрашивает GET /api/table → пересчёт → обновление UI
 ```
 
 ## 4. API Endpoints
 
+Все маршруты, кроме `/api/health` и `/api/auth/login`, требуют заголовок `Authorization: Bearer <JWT>`.
+
 ### Authentication
-- `POST /api/auth/login` - вход в систему
-- `POST /api/auth/logout` - выход
-- `POST /api/auth/refresh` - обновление токена
-- `POST /api/auth/forgot-password` - запрос восстановления
-- `POST /api/auth/reset-password` - сброс пароля
+- `POST /api/auth/login` — вход (логин + пароль), возвращает JWT
 
 ### Matches
-- `GET /api/matches` - получить все матчи
-- `GET /api/matches/round/:round` - матчи конкретного тура
-- `POST /api/matches` - добавить матч
-- `PUT /api/matches/:id` - обновить матч
-- `DELETE /api/matches/:id` - удалить матч
+- `GET /api/matches` — все матчи
+- `GET /api/matches/round/:round` — матчи конкретного тура
+- `POST /api/matches` — добавить матч
+- `PUT /api/matches/:id` — обновить матч
+- `DELETE /api/matches/:id` — удалить матч
 
 ### Teams & Table
-- `GET /api/teams` - список команд
-- `GET /api/table` - турнирная таблица
+- `GET /api/teams` — список команд
+- `GET /api/table` — турнирная таблица (рассчитывается на сервере)
+
+### Служебные
+- `GET /api/health` — проверка работоспособности
 
 ## 5. Безопасность
 
 ### 5.1 Аутентификация
-- JWT токены с временем жизни 24 часа
-- Refresh токены для продления сессии
-- Хеширование паролей bcrypt (10 rounds)
+- Пароль хранится как хеш PBKDF2 (SHA-256) с солью; вычисляется через Web Crypto API (встроен в Workers, без внешних библиотек)
+- JWT подписывается серверным секретом `JWT_SECRET`
+- Срок жизни JWT — 24 часа; восстановления пароля нет (учётные данные заданы заранее)
 
 ### 5.2 Защита API
-- CORS политики
-- Rate limiting (100 запросов/минута)
-- Валидация входных данных
-- SQL injection защита через параметризованные запросы
+- CORS-политика (`hono/cors`) разрешает запросы только с домена frontend
+- Валидация всех входных данных
+- Параметризованные запросы D1 (защита от SQL-инъекций)
 
-### 5.3 HTTPS
-- Обязательное использование SSL
-- HTTP Strict Transport Security (HSTS)
+### 5.3 Секреты
+- `JWT_SECRET` хранится через `wrangler secret put` — не в коде и не в git
+- Локальные секреты — в `.dev.vars` (добавлен в `.gitignore`)
 
-## 6. Масштабируемость и производительность
+### 5.4 HTTPS
+- Обеспечивается Cloudflare автоматически для `*.pages.dev` и `*.workers.dev`
 
-### 6.1 Оптимизации
-- Кеширование статичных данных (список команд)
-- Индексы в БД на часто используемых полях
-- Минификация JS/CSS для production
-- CDN для статических ресурсов
+## 6. Производительность
 
-### 6.2 Мониторинг
-- Логирование всех API запросов
-- Отслеживание времени ответа
-- Алерты при ошибках
+- Edge-выполнение Worker без cold start
+- Индексы D1 на часто используемых полях (`round`, `home_team_id`, `away_team_id`)
+- Кеширование статичных данных (список команд) на клиенте
+- Безлимитный трафик на бесплатном тарифе Cloudflare Pages
 
 ## 7. Deployment Architecture
 
+```mermaid
+graph LR
+    GH["GitHub<br/>репозиторий"] --> Pages["Cloudflare Pages<br/>(frontend)"]
+    GH --> Worker["Cloudflare Worker<br/>(backend)"]
+    Worker --> D1["Cloudflare D1<br/>(SQLite)"]
+
+    style GH fill:#24292e,color:#fff
+    style Pages fill:#F38020,color:#fff
+    style Worker fill:#F38020,color:#fff
+    style D1 fill:#F38020,color:#fff
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Netlify   │────▶│Railway/Render│────▶│  Supabase   │
-│  (Frontend) │     │  (Backend)   │     │(PostgreSQL) │
-└─────────────┘     └──────────────┘     └─────────────┘
-       ↓                    ↓                     
-   Auto-deploy         Auto-deploy           
-   from GitHub         from GitHub           
-```
+
+- Frontend: авто-деплой из GitHub через Cloudflare Pages (или `wrangler pages deploy`)
+- Backend: деплой Worker через `wrangler deploy`
+- БД: создание и миграции через `wrangler d1`
 
 ## 8. Ограничения текущей архитектуры
 
-- Один сервер для backend (без load balancing)
-- Отсутствие real-time обновлений (требуется refresh)
-- Нет горизонтального масштабирования
-- Ограниченные ресурсы на бесплатных планах хостинга
+- Один пользователь, без ролей и многопользовательского режима
+- Нет real-time обновлений между устройствами (данные обновляются при действии/перезагрузке)
+- D1 — единая база без репликации на бесплатном тарифе
+- Лимиты бесплатного тарифа Cloudflare (с большим запасом для данного объёма данных)
