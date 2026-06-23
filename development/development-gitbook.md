@@ -4,246 +4,225 @@
 
 ```
 epl-results-tracker/
-├── index.html              # Главная страница приложения
-├── css/
-│   └── styles.css         # Пользовательские стили
-├── js/
-│   ├── app.js            # Точка входа, инициализация
-│   ├── data.js           # Работа с localStorage
-│   ├── ui.js             # Управление интерфейсом
-│   ├── calculator.js     # Расчет турнирной таблицы
-│   └── validator.js      # Валидация данных
-├── data/
-│   └── teams.json        # Статический список команд
-└── docs/                 # Документация проекта
+├── frontend/                  # Cloudflare Pages (статика)
+│   ├── index.html             # Главный экран после входа
+│   ├── login.html             # Страница входа
+│   ├── css/
+│   │   └── styles.css
+│   ├── js/
+│   │   ├── api.js             # Клиент REST API (Fetch + JWT)
+│   │   ├── auth.js            # Логин, хранение токена, выход
+│   │   ├── rounds.js          # Селектор туров и матчи
+│   │   └── table.js           # Турнирная таблица
+│   └── config/
+│       └── config.js          # API_URL
+│
+├── backend/                   # Cloudflare Worker
+│   ├── src/
+│   │   └── index.js           # Hono-приложение целиком
+│   ├── schema.sql             # Схема D1
+│   ├── seed.sql               # Команды АПЛ
+│   ├── wrangler.toml          # Конфигурация Cloudflare
+│   ├── package.json
+│   ├── .dev.vars              # Локальные секреты (в .gitignore!)
+│   └── .gitignore
+│
+└── README.md
 ```
 
-## 2. Архитектура кода
+## 2. Технологический стек
 
-### 2.1 Модульная организация
+| Слой | Технология |
+|------|-----------|
+| Frontend | Vanilla JS (ES6+), Bootstrap 5, Fetch API |
+| Хостинг frontend | Cloudflare Pages |
+| Backend | Hono на Cloudflare Workers |
+| Аутентификация | JWT (`hono/jwt`), пароль — PBKDF2 (Web Crypto API) |
+| База данных | Cloudflare D1 (SQLite), D1 binding |
+| Инструменты | Wrangler CLI, Node.js 18+, Git |
 
-**app.js** - Главный модуль
-```javascript
-// Инициализация приложения
-// Подключение обработчиков событий
-// Координация между модулями
-```
+> Важно: в среде Workers нет полноценного Node.js runtime. Поэтому Express **не используется** — вместо него Hono. Модули вроде `bcrypt` или `pg` тоже недоступны: пароль хешируется через встроенный Web Crypto API, а к БД обращаемся через D1 binding.
 
-**data.js** - Управление данными
-```javascript
-// Функции для работы с localStorage
-// CRUD операции для матчей
-// Экспорт/импорт данных
-```
+## 3. Backend: организация кода
 
-**ui.js** - Интерфейс
-```javascript
-// Отрисовка таблиц
-// Обновление DOM элементов
-// Управление формами
-```
+Весь Worker — в одном файле `src/index.js`. Базовый каркас:
 
-**calculator.js** - Бизнес-логика
-```javascript
-// Расчет статистики команд
-// Сортировка турнирной таблицы
-// Применение правил АПЛ
-```
+```js
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { jwt, sign } from 'hono/jwt';
 
-**validator.js** - Валидация
-```javascript
-// Проверка вводимых данных
-// Валидация дат и счета
-// Проверка уникальности
-```
+const app = new Hono();
 
-### 2.2 Основные функции
+// CORS — только домен frontend
+app.use('/api/*', cors({ origin: 'https://epl-tracker.pages.dev' }));
 
-```javascript
-// data.js
-function saveMatch(match) { }
-function getMatches() { }
-function deleteMatch(matchId) { }
-function exportData() { }
-function importData(jsonData) { }
+// Health (без авторизации)
+app.get('/api/health', (c) => c.json({ status: 'ok' }));
 
-// calculator.js
-function calculateTable(matches) { }
-function sortTeams(teams) { }
-function getTeamStats(teamId, matches) { }
+// Логин (без авторизации)
+app.post('/api/auth/login', async (c) => { /* проверка пароля, выдача JWT */ });
 
-// ui.js
-function renderTable(tableData) { }
-function renderMatches(matches) { }
-function showMessage(text, type) { }
-```
-
-## 3. Добавление новых функций
-
-### 3.1 Пример: Добавление фильтра по турам
-
-1. **Добавить UI элемент в index.html:**
-```html
-<select id="roundFilter" class="form-select">
-  <option value="">Все туры</option>
-  <option value="1">Тур 1</option>
-  <!-- ... -->
-</select>
-```
-
-2. **Добавить функцию фильтрации в data.js:**
-```javascript
-function getMatchesByRound(round) {
-  const matches = getMatches();
-  if (!round) return matches;
-  return matches.filter(m => m.round === parseInt(round));
-}
-```
-
-3. **Обновить отображение в ui.js:**
-```javascript
-document.getElementById('roundFilter').addEventListener('change', (e) => {
-  const filteredMatches = getMatchesByRound(e.target.value);
-  renderMatches(filteredMatches);
+// JWT middleware — на всё остальное под /api
+app.use('/api/*', (c, next) => {
+  // пропускаем health и login
+  const open = ['/api/health', '/api/auth/login'];
+  if (open.includes(c.req.path)) return next();
+  return jwt({ secret: c.env.JWT_SECRET })(c, next);
 });
+
+// Защищённые маршруты
+app.get('/api/teams', async (c) => { /* ... */ });
+app.get('/api/matches/round/:round', async (c) => { /* ... */ });
+app.post('/api/matches', async (c) => { /* ... */ });
+app.put('/api/matches/:id', async (c) => { /* ... */ });
+app.delete('/api/matches/:id', async (c) => { /* ... */ });
+app.get('/api/table', async (c) => { /* расчёт таблицы */ });
+
+export default app;
 ```
 
-### 3.2 Пример: Добавление статистики "дома/в гостях"
+### 3.1 Хеширование пароля (Web Crypto API)
 
-1. **Расширить calculator.js:**
-```javascript
-function getHomeAwayStats(teamId, matches) {
-  const homeMatches = matches.filter(m => m.homeTeamId === teamId);
-  const awayMatches = matches.filter(m => m.awayTeamId === teamId);
-  // Расчет отдельной статистики
-  return { home: homeStats, away: awayStats };
+```js
+async function hashPassword(password, saltHex) {
+  const enc = new TextEncoder();
+  const salt = saltHex
+    ? Uint8Array.from(saltHex.match(/.{2}/g).map(b => parseInt(b, 16)))
+    : crypto.getRandomValues(new Uint8Array(16));
+
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    key, 256
+  );
+  const hashHex = [...new Uint8Array(bits)]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  const outSalt = [...salt]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  return { hash: hashHex, salt: outSalt };
 }
 ```
 
-2. **Обновить отображение таблицы**
+При логине: берём `password_salt` из БД, хешируем введённый пароль с этой солью, сравниваем с `password_hash`.
 
-## 4. Работа с данными
+### 3.2 Выдача JWT
 
-### 4.1 Схема хранения
-```javascript
-// Ключи localStorage
-const STORAGE_KEYS = {
-  TEAMS: 'epl_teams',
-  MATCHES: 'epl_matches',
-  SETTINGS: 'epl_settings'
-};
+```js
+const token = await sign(
+  { sub: user.id, username: user.username, exp: Math.floor(Date.now()/1000) + 86400 },
+  c.env.JWT_SECRET
+);
 ```
 
-### 4.2 Миграция данных
-При изменении структуры данных:
-```javascript
-function migrateData() {
-  const version = getDataVersion();
-  if (version < '2.0') {
-    // Применить миграцию
-    updateDataStructure();
-    setDataVersion('2.0');
-  }
-}
+### 3.3 Доступ к D1
+
+```js
+// Чтение
+const { results } = await c.env.DB
+  .prepare('SELECT * FROM teams ORDER BY sort_order').all();
+
+// Запись с параметрами
+await c.env.DB
+  .prepare('INSERT INTO matches (round, home_team_id, away_team_id, home_score, away_score, match_date) VALUES (?, ?, ?, ?, ?, ?)')
+  .bind(round, homeId, awayId, hs, as, date)
+  .run();
 ```
 
-## 5. Стилизация
+## 4. Расчёт турнирной таблицы
 
-### 5.1 CSS структура
-```css
-/* Базовые стили */
-:root {
-  --primary-color: #38003c;  /* Цвет АПЛ */
-  --success-color: #00ff87;
-}
+Таблица не хранится в БД, а считается при запросе `GET /api/table`:
 
-/* Компонентные стили */
-.match-form { }
-.results-table { }
-.league-table { }
+```js
+// 1. Загрузить все команды и все матчи
+// 2. Инициализировать статистику для каждой команды нулями
+// 3. Пройти по матчам: начислить P/W/D/L, GF/GA, очки
+// 4. Вычислить GD = GF - GA
+// 5. Отсортировать: очки ↓, разница ↓, забитые ↓, имя ↑
+// 6. Проставить позиции
 ```
 
-### 5.2 Bootstrap кастомизация
-- Используйте Bootstrap утилиты для отступов и выравнивания
-- Переопределяйте только необходимые стили
-- Сохраняйте адаптивность
+Правила: победа +3, ничья +1, поражение 0.
 
-## 6. Отладка и тестирование
+## 5. Frontend: организация
 
-### 6.1 Консольные команды для отладки
-```javascript
-// Добавить в app.js для отладки
-window.debug = {
-  clearData: () => localStorage.clear(),
-  showData: () => console.log(getAllData()),
-  addTestMatches: () => addRandomMatches(10)
-};
+- `config/config.js` — единственное место с `API_URL`
+- `js/api.js` — обёртка над Fetch: добавляет `Authorization: Bearer`, при 401 редиректит на `login.html`
+- `js/auth.js` — форма входа, сохранение/удаление JWT в `localStorage`
+- `js/rounds.js` — селектор туров 1–38, рендер матчей, формы (модальные окна Bootstrap)
+- `js/table.js` — запрос `/api/table`, рендер таблицы, вызывается после любого изменения матчей
+
+Главный экран (`index.html`) состоит из трёх секций: селектор тура, список матчей выбранного тура с кнопкой «Добавить», турнирная таблица.
+
+## 6. Локальная разработка
+
+```bash
+cd backend
+npm install
+wrangler dev        # запускает Worker локально + локальную D1
 ```
 
-### 6.2 Проверка localStorage
-```javascript
-// Просмотр всех данных
-Object.keys(localStorage).forEach(key => {
-  console.log(key, JSON.parse(localStorage.getItem(key)));
-});
+Применить схему к локальной БД:
+```bash
+wrangler d1 execute epl-tracker --local --file=./schema.sql
+wrangler d1 execute epl-tracker --local --file=./seed.sql
 ```
 
-## 7. Оптимизация производительности
+Frontend — любой статический сервер:
+```bash
+cd frontend
+npx serve .
+```
+Не забудьте временно указать в `config.js` локальный адрес Worker (обычно `http://localhost:8787/api`).
 
-- **Кэширование DOM элементов** - сохраняйте ссылки на часто используемые элементы
-- **Batch обновления** - обновляйте UI одним вызовом, а не по частям
-- **Debounce для поиска** - если добавите поиск, используйте задержку
+## 7. Git-гигиена
 
-## 8. Возможные улучшения
+В `.gitignore` обязательно:
+```
+node_modules/
+.dev.vars
+.env
+.wrangler/
+*.log
+```
 
-### 8.1 Краткосрочные
+Никогда не коммитьте `.dev.vars`, значения секретов и `database_id` со скриншотов. `database_id` в `wrangler.toml` — не секрет, но менять его на чужой нельзя.
+
+## 8. Добавление новой функции (пример)
+
+**Добавить фильтр «только сыгранные матчи»:**
+1. Backend: добавить query-параметр в `GET /api/matches` и условие в SQL
+2. Frontend: добавить переключатель в UI, передавать параметр в `api.js`
+3. Перерисовать список в `rounds.js`
+
+## 9. Тестирование
+
+- **Unit** (расчёт таблицы, валидация): функции вынести так, чтобы их можно было тестировать изолированно; запускать через Vitest
+- **API**: коллекция запросов (REST-клиент / Postman) ко всем endpoints, проверка статус-кодов и схемы ответа
+- **E2E / ручное**: сценарии входа, CRUD матчей, пересчёта таблицы
+
+Подробности — в задачах тестирования (роль Yana).
+
+## 10. Возможные улучшения
+
+### Краткосрочные
 - [ ] Поиск по командам
-- [ ] Фильтр по датам
-- [ ] Печать турнирной таблицы
-- [ ] Темная тема
-- [ ] Горячие клавиши
+- [ ] Подсветка зон (еврокубки / вылет) в таблице
+- [ ] Тёмная тема
 
-### 8.2 Долгосрочные
-- [ ] PWA функциональность (offline режим)
-- [ ] Графики и визуализация (Chart.js)
-- [ ] Интеграция с Football API
-- [ ] Мультиязычность
-- [ ] История изменений позиций
-
-## 9. Работа с диаграммами
-
-### 9.1 Обновление диаграмм
-Проект использует Mermaid для диаграмм в документации:
-- **C4 Context** - в файле `ARCHITECTURE.md`
-- **ER-диаграмма** - в файле `DATA_STRUCTURE.md`
-
-### 9.2 Просмотр диаграмм
-- GitHub автоматически рендерит Mermaid диаграммы
-- Для локального просмотра используйте VS Code с расширением Mermaid
-- Или онлайн редактор: [Mermaid Live Editor](https://mermaid.live/)
-
-### 9.3 Синтаксис
-```mermaid
-graph TB
-    A[Компонент A] --> B[Компонент B]
-```
-
-## 10. FAQ для разработчиков
-
-**Q: Как добавить новую команду?**
-A: Обновите файл `data/teams.json` и переинициализируйте приложение.
-
-**Q: Можно ли использовать базу данных вместо localStorage?**
-A: Да, но потребуется backend. Рассмотрите Firebase или Supabase для быстрого старта.
-
-**Q: Как добавить автоматическое обновление результатов?**
-A: Интегрируйте Football-data API или используйте n8n для периодического скрапинга.
+### Долгосрочные
+- [ ] PWA / offline-режим
+- [ ] Графики (Chart.js)
+- [ ] AI-функции: предсказание результатов, генерация комментариев, чат-бот по статистике
 
 ## 11. Полезные ресурсы
 
-- [MDN Web Docs - localStorage](https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage)
-- [Bootstrap 5 Documentation](https://getbootstrap.com/docs/5.0/)
-- [Premier League Official Site](https://www.premierleague.com/)
-- [StatiCrypt GitHub](https://github.com/robinmoisson/staticrypt)
-- [Mermaid Diagram Syntax](https://mermaid.js.org/) - для обновления диаграмм
-- [C4 Model](https://c4model.com/) - методология архитектурных диаграмм
+- [Cloudflare Workers](https://developers.cloudflare.com/workers/)
+- [Cloudflare D1](https://developers.cloudflare.com/d1/)
+- [Cloudflare Pages](https://developers.cloudflare.com/pages/)
+- [Hono](https://hono.dev/)
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)
+- [Bootstrap 5](https://getbootstrap.com/docs/5.3/)
+- [Web Crypto API (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API)
