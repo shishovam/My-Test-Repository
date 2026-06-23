@@ -1,6 +1,6 @@
 # Summary
 
-* [Введение](summary-gitbook.md)
+* [Введение](readme-gitbook.md)
 
 ## Проектирование
 
@@ -11,7 +11,7 @@
 ## Использование
 
 * [Руководство пользователя](user-guide/user-guide-gitbook.md)
-* [Развертывание](deployment/deployment-gitbook.md)
+* [Развёртывание](deployment/deployment-gitbook.md)
 
 ## Разработка
 
